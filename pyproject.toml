@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-wayfinder"
+version = "0.1.0"
+description = "An inspection layer for understanding warehouse tables, fields, and relationships before analysis."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Thomas Musser" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Database",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+  "pydantic>=2.7",
+  "sqlglot>=27.0",
+  "typer>=0.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/tmusser/data-wayfinder"
+Repository = "https://github.com/tmusser/data-wayfinder"
+Issues = "https://github.com/tmusser/data-wayfinder/issues"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+web = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+]
+
+[project.scripts]
+data-wayfinder = "data_wayfinder.cli:app"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q --strict-config --strict-markers"
+xfail_strict = true
