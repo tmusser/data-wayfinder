@@ -126,11 +126,12 @@ class TableAudit(BaseModel):
 
 class QueryTable(BaseModel):
     name: str
-    alias: str | None = None
+    aliases: list[str] = Field(default_factory=list)
 
 
 class QueryMap(BaseModel):
     dialect: str | None = None
     tables: list[QueryTable] = Field(default_factory=list)
+    ctes: list[QueryTable] = Field(default_factory=list)
     relationships: list[RelationshipAudit] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
