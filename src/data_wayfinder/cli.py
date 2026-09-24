@@ -43,8 +43,14 @@ def map_command(
 
     typer.echo("Tables")
     for table in query_map.tables:
-        alias = f" ({table.alias})" if table.alias else ""
-        typer.echo(f"- {table.name}{alias}")
+        aliases = f" ({', '.join(table.aliases)})" if table.aliases else ""
+        typer.echo(f"- {table.name}{aliases}")
+
+    if query_map.ctes:
+        typer.echo("\nCTEs (query-scoped, not warehouse tables)")
+        for cte in query_map.ctes:
+            aliases = f" ({', '.join(cte.aliases)})" if cte.aliases else ""
+            typer.echo(f"- {cte.name}{aliases}")
 
     typer.echo("\nRelationships")
     if not query_map.relationships:

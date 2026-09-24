@@ -19,23 +19,39 @@ def _fallback_map(sql: str, dialect: str | None = None) -> QueryMap:
     in constrained environments and intentionally handles only simple equality
     joins.
     """
+    # Names defined by a WITH clause are CTEs, not warehouse tables -- keep them out of
+    # `tables` the same way the sqlglot path below does, even in this degraded fallback.
+    cte_name_pattern = re.compile(
+        r"\bwith\s+([A-Za-z_]\w*)\s+as\s*\(|,\s*([A-Za-z_]\w*)\s+as\s*\(",
+        re.IGNORECASE,
+    )
+    cte_names = {
+        (m.group(1) or m.group(2)).lower() for m in cte_name_pattern.finditer(sql)
+    }
+
     table_pattern = re.compile(
         r"\b(?:from|join)\s+([A-Za-z_][\w.$]*)(?:\s+(?:as\s+)?([A-Za-z_]\w*))?",
         re.IGNORECASE,
     )
     matches = list(table_pattern.finditer(sql))
-    aliases: OrderedDict[str, str] = OrderedDict()
-    tables: list[QueryTable] = []
+    alias_lookup: OrderedDict[str, str] = OrderedDict()  # alias/bare name -> canonical name
+    tables: OrderedDict[str, QueryTable] = OrderedDict()
+    ctes: OrderedDict[str, QueryTable] = OrderedDict()
     reserved = {"on", "where", "left", "right", "inner", "outer", "full", "join"}
     for match in matches:
         name = match.group(1)
         alias = match.group(2)
         if alias and alias.lower() in reserved:
             alias = None
-        key = alias or name.split(".")[-1]
-        aliases[key] = name
-        if name not in [table.name for table in tables]:
-            tables.append(QueryTable(name=name, alias=alias))
+
+        bucket = ctes if name.lower() in cte_names else tables
+        if name not in bucket:
+            bucket[name] = QueryTable(name=name, aliases=[])
+        if alias and alias not in bucket[name].aliases:
+            bucket[name].aliases.append(alias)
+
+        alias_lookup[alias or name.split(".")[-1]] = name
+        alias_lookup[name.split(".")[-1]] = name
 
     relationships: list[RelationshipAudit] = []
     join_pattern = re.compile(
@@ -46,8 +62,8 @@ def _fallback_map(sql: str, dialect: str | None = None) -> QueryMap:
     )
     for match in join_pattern.finditer(sql):
         join_type, _, _, left_alias, left_field, right_alias, right_field = match.groups()
-        left_table = aliases.get(left_alias, left_alias)
-        right_table = aliases.get(right_alias, right_alias)
+        left_table = alias_lookup.get(left_alias, left_alias)
+        right_table = alias_lookup.get(right_alias, right_alias)
         detail = f"{left_alias}.{left_field} = {right_alias}.{right_field}"
         relationships.append(
             RelationshipAudit(
@@ -71,7 +87,13 @@ def _fallback_map(sql: str, dialect: str | None = None) -> QueryMap:
     if not tables:
         warnings.append("No tables were resolved from SQL.")
     warnings.append("Parsed with the basic fallback parser; install sqlglot for full parsing.")
-    return QueryMap(dialect=dialect, tables=tables, relationships=relationships, warnings=warnings)
+    return QueryMap(
+        dialect=dialect,
+        tables=list(tables.values()),
+        ctes=list(ctes.values()),
+        relationships=relationships,
+        warnings=warnings,
+    )
 
 
 def map_query(sql: str, dialect: str | None = None) -> QueryMap:
@@ -82,15 +104,30 @@ def map_query(sql: str, dialect: str | None = None) -> QueryMap:
         return _fallback_map(sql, dialect)
 
     expression = sqlglot.parse_one(sql, read=dialect)
-    tables_by_alias: OrderedDict[str, QueryTable] = OrderedDict()
+
+    # Names defined in this query's own WITH clause are query-scoped CTEs, not warehouse
+    # tables -- a bare, unqualified reference to one of these names is the CTE, per SQL's
+    # own scoping rules (a CTE shadows a same-named real table within its query).
+    cte_names = {cte.alias_or_name.lower() for cte in expression.find_all(exp.CTE)}
+
+    tables: OrderedDict[str, QueryTable] = OrderedDict()  # keyed by canonical name
+    ctes: OrderedDict[str, QueryTable] = OrderedDict()  # keyed by CTE name
+    lookup: dict[str, QueryTable] = {}  # alias or bare name -> the table/CTE it refers to
 
     for table in expression.find_all(exp.Table):
         parts = [part for part in (table.catalog, table.db, table.name) if part]
         canonical = ".".join(parts)
         alias = table.alias or None
-        key = alias or table.name
-        if key not in tables_by_alias:
-            tables_by_alias[key] = QueryTable(name=canonical, alias=alias)
+        is_cte = not table.db and not table.catalog and table.name.lower() in cte_names
+
+        bucket = ctes if is_cte else tables
+        if canonical not in bucket:
+            bucket[canonical] = QueryTable(name=canonical, aliases=[])
+        if alias and alias not in bucket[canonical].aliases:
+            bucket[canonical].aliases.append(alias)
+
+        lookup[alias or canonical] = bucket[canonical]
+        lookup[canonical] = bucket[canonical]
 
     relationships: list[RelationshipAudit] = []
     for join in expression.find_all(exp.Join):
@@ -109,8 +146,8 @@ def map_query(sql: str, dialect: str | None = None) -> QueryMap:
                 continue
             left_alias = left.table
             right_alias = right.table
-            left_table = tables_by_alias.get(left_alias)
-            right_table = tables_by_alias.get(right_alias)
+            left_table = lookup.get(left_alias)
+            right_table = lookup.get(right_alias)
             relationships.append(
                 RelationshipAudit(
                     left_table=left_table.name if left_table else left_alias,
@@ -131,6 +168,7 @@ def map_query(sql: str, dialect: str | None = None) -> QueryMap:
 
     return QueryMap(
         dialect=dialect,
-        tables=list(tables_by_alias.values()),
+        tables=list(tables.values()),
+        ctes=list(ctes.values()),
         relationships=relationships,
     )
