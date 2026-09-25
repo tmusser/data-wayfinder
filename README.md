@@ -163,10 +163,25 @@ data-wayfinder probe-join \
 
 The SQLite development adapter returns exact local diagnostics for cardinality, match rates, and left-join row expansion.
 
+Inspect an Athena table:
+
+```bash
+python -m pip install -e ".[athena]"
+
+data-wayfinder inspect-athena \
+  --database analytics \
+  --table customers \
+  --workgroup wayfinder-readonly \
+  --region us-east-1
+```
+
+Athena intentionally leaves exact row count unknown instead of issuing an automatic full-table `COUNT(*)`. See [Athena adapter](docs/athena.md) for credentials, query-result configuration, scan telemetry, result reuse, and cost guardrails.
+
 ## CLI
 
 ```text
-data-wayfinder inspect       bounded table and field profiling
+data-wayfinder inspect       bounded SQLite table and field profiling
+data-wayfinder inspect-athena bounded Athena table and field profiling
 data-wayfinder map           SQL -> tables + relationship evidence
 data-wayfinder probe-join    relationship diagnostics
 data-wayfinder demo-db       local demo warehouse
@@ -219,6 +234,7 @@ src/data_wayfinder/
 ├── cli.py                 CLI entry point
 ├── datasources/
 │   ├── base.py            data-plane protocol
+│   ├── athena.py          AWS Athena adapter
 │   └── sqlite.py          working local adapter
 └── providers/
     ├── base.py            metadata-plane protocol
@@ -281,6 +297,7 @@ Not in the initial boundary:
 - [x] `TableAudit`, field, and relationship contracts
 - [x] bounded sample profiler
 - [x] SQLite development adapter
+- [x] Athena datasource adapter
 - [x] SQL table + equality-join mapping
 - [x] exact SQLite relationship diagnostics
 - [x] DataHub MCP metadata adapter boundary
@@ -297,11 +314,12 @@ Not in the initial boundary:
 
 ### v0.3 — warehouse adapters
 
-- [ ] Snowflake
-- [ ] BigQuery
-- [ ] Databricks / Spark SQL
-- [ ] Trino / Presto
-- [ ] Postgres
+- [x] Athena — first production dogfood backend
+- [ ] [Snowflake](https://github.com/tmusser/data-wayfinder/issues/4) — open for contribution
+- [ ] [BigQuery](https://github.com/tmusser/data-wayfinder/issues/5) — open for contribution
+- [ ] [Trino / Presto](https://github.com/tmusser/data-wayfinder/issues/6) — open for contribution
+- [ ] [Postgres](https://github.com/tmusser/data-wayfinder/issues/7) — open for contribution
+- [ ] Databricks / Spark SQL — defer until a live dogfood environment is available for stress testing
 
 ### v0.4 — agent surface
 
