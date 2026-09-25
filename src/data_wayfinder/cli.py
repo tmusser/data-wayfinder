@@ -5,7 +5,12 @@ from pathlib import Path
 
 import typer
 
-from data_wayfinder.datasources import ProfileBudget, SQLiteDataSource
+from data_wayfinder.datasources import (
+    AthenaConfig,
+    AthenaDataSource,
+    ProfileBudget,
+    SQLiteDataSource,
+)
 from data_wayfinder.service import inspect_relationship, inspect_table
 from data_wayfinder.sqlmap import map_query
 
@@ -26,6 +31,66 @@ def inspect_command(
         source,
         table,
         budget=ProfileBudget(sample_rows=sample_rows, max_fields=max_fields),
+    )
+    typer.echo(audit.model_dump_json(indent=2))
+
+
+@app.command("inspect-athena")
+def inspect_athena_command(
+    table: str = typer.Option(..., "--table", help="Table name to inspect."),
+    database: str = typer.Option(..., "--database", help="Athena database."),
+    catalog: str = typer.Option("AwsDataCatalog", "--catalog"),
+    workgroup: str = typer.Option("primary", "--workgroup"),
+    output_location: str | None = typer.Option(
+        None,
+        "--output-location",
+        help="S3 query result location if the workgroup does not provide one.",
+    ),
+    region: str | None = typer.Option(None, "--region"),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help="AWS shared-config profile name.",
+    ),
+    sample_rows: int = typer.Option(5000, min=1, max=100_000),
+    max_fields: int = typer.Option(100, min=1, max=500),
+    client_scan_limit_mb: float | None = typer.Option(
+        None,
+        "--client-scan-limit-mb",
+        min=0.001,
+        help="Best-effort cancellation threshold; use workgroup limits for a hard cap.",
+    ),
+    result_reuse_minutes: int = typer.Option(
+        0,
+        "--result-reuse-minutes",
+        min=0,
+        max=10080,
+    ),
+) -> None:
+    scan_limit = (
+        int(client_scan_limit_mb * 1024 * 1024)
+        if client_scan_limit_mb is not None
+        else None
+    )
+    source = AthenaDataSource(
+        AthenaConfig(
+            database=database,
+            catalog=catalog,
+            workgroup=workgroup,
+            output_location=output_location,
+            region_name=region,
+            profile_name=profile,
+            client_scan_limit_bytes=scan_limit,
+            result_reuse_minutes=result_reuse_minutes,
+        )
+    )
+    audit = inspect_table(
+        source,
+        table,
+        budget=ProfileBudget(
+            sample_rows=sample_rows,
+            max_fields=max_fields,
+        ),
     )
     typer.echo(audit.model_dump_json(indent=2))
 

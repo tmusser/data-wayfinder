@@ -28,6 +28,9 @@ Repository = "https://github.com/tmusser/data-wayfinder"
 Issues = "https://github.com/tmusser/data-wayfinder/issues"
 
 [project.optional-dependencies]
+athena = [
+  "boto3>=1.35",
+]
 dev = [
   "pytest>=8.0",
 ]

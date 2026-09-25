@@ -123,6 +123,10 @@ def profile_table(
             f"Field statistics are based on at most {budget.sample_rows} sampled rows."
         )
 
+    source_warnings = getattr(source, "audit_warnings", None)
+    if callable(source_warnings):
+        warnings.extend(source_warnings())
+
     return TableAudit(
         table=TableRef(name=table),
         profile=TableProfile(
